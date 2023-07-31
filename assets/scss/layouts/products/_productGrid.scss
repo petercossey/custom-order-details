@@ -136,7 +136,7 @@
 // -----------------------------------------------------------------------------
 
 .productGrid.productGrid--orderContents {
-    .product {
+    .product.account-listItem {
         @include grid-column(6, $float: none);
         display: inline-block;
         font-size: fontSize("base"); // 1
@@ -148,6 +148,12 @@
 
         @include breakpoint("medium") {
             width: grid-calc(6, $total-columns);
+        }
+        &.account-listItem {
+            border: none;
+            padding-top: 0;
+            padding-bottom: 0;
+            position: relative;
         }
     }
 }
