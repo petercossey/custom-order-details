@@ -1,0 +1,151 @@
+<h3 class="account-heading">{{lang 'account.orders.details.order_contents'}}</h3>
+<ul class="productGrid productGrid--orderContents">
+    {{#each order.items}}
+        {{#if shipping_rows.length}}
+            {{#each shipping_rows}}
+                {{#if is_shipping}}
+                    <li class="account-listShipping">
+                        <h5 class="account-listShipping-title">{{lang 'account.orders.details.ship_to_multi' street=address city=city state=state zip=zip country=country}}</h5>
+                    </li>
+                {{/if}}
+            {{/each}}
+        {{/if}}
+    <li class="product account-listItem">
+        <article class="card" nx-target="{{order_product_id}}">
+            <figure class="card-figure">
+                <div class="card-img-container">
+                    {{> components/common/responsive-img
+                        image=image
+                        class="card-image"
+                        fallback_size=../../theme_settings.productthumb_size
+                        lazyload=../../theme_settings.lazyload_mode
+                        default_image=../../theme_settings.default_image_product
+                    }}
+                </div>
+            </figure>
+            <div class="card-body">
+                <p class="card-text nx-loading" nx-update="brand">Loading...</p>
+                <p class="card-text nx-loading" nx-update="invoice_code">Loading...</p>
+                <h3 class="card-title">{{quantity}} &#215; {{name}}</h3>
+                <div class="card-text">
+                    <div class="price-section">{{price.formatted}}</div>
+                </div>
+                <div class="account-product-checkItem">
+                    {{#if show_reorder}}
+                        <input class="form-checkbox" type="checkbox" id="account-product-id-{{order_product_id}}" value="{{order_product_id}}">
+                        <label for="account-product-id-{{order_product_id}}" class="form-label">
+                            <span class="is-srOnly">Checkbox {{order_product_id}} label</span>
+                        </label>
+                    {{/if}}
+                </div>
+            </div>
+        </article>
+    </li>
+    {{/each}}
+</ul>
+{{#partial "page_bottom"}}
+<style>
+    @keyframes pulsate {
+        0% { opacity: 1; }
+        50% { opacity: 0.5; }
+        100% { opacity: 1; }
+    }
+
+    .nx-loading {
+        animation: pulsate 1s linear infinite; /* 1s duration, linear timing, infinite loop */
+    }
+</style>
+<script>
+    const orderId = `{{order.id}}`;
+    window.addEventListener('load', function() {
+        // Only update page if this is order confirmation
+        if (orderId) {
+            fetch(`/api/storefront/orders/${orderId}`, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            })
+                .then(response => response.json())
+                .then(orderData => {
+                    // After returning the order data update the DOM to fill in details.
+                    // console.log(orderData);
+                    const entityIds = orderData.lineItems.physicalItems.map((item) => item.productId);
+                    // console.log('Entity Ids for Storefront GraphQL query: ', entityIds);
+                    
+                    // Storefront GraphQL Query
+                    const query = `
+                        query productsById($productIds: [Int!]) {
+                            site {
+                                products(entityIds: $productIds) {
+                                    edges {
+                                        node {
+                                            entityId
+                                            name
+                                            brand {
+                                                name
+                                            }
+                                            customFields(names: ["invoice_code"]) {
+                                                edges {
+                                                    node {
+                                                        name
+                                                        value
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    `;
+
+                    // Fetch data from Storefront GraphQL API
+                    return fetch(`/graphql`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer {{settings.storefront_api.token}}'
+                        },
+                        body: JSON.stringify({
+                            query: query,
+                            variables: { productIds: entityIds }
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(productData => {
+                        // console.log(productData);
+                        // merge orderData and productData
+                        const mergedOrderProducts = orderData.lineItems.physicalItems.map((orderItem) => {
+                            const relatedProduct = productData.data.site.products.edges.find(
+                                (productItem) => productItem.node.entityId === orderItem.productId
+                            );
+                            return { ...orderItem, ...relatedProduct };
+                        });
+                        // console.log(mergedOrderProducts);
+
+                        // Update DOM elements in order details product grid.
+                        mergedOrderProducts.forEach((item) => {
+                            const targetProduct = document.querySelector(`[nx-target="${item.id}"]`);
+                            // update brand and custom field
+                            const brandEl = targetProduct.querySelector(`[nx-update="brand"]`);
+                            if (item.node.brand) {
+                                brandEl.textContent = item.node.brand.name;
+                                brandEl.classList.remove('nx-loading');
+                            } else {
+                                brandEl.remove();
+                            }
+                            item.node.customFields.edges.forEach((field) => {
+                                if (field.node.name === 'invoice_code') {
+                                    const invoiceCodeEl = targetProduct.querySelector(`[nx-update="invoice_code"]`);
+                                    invoiceCodeEl.textContent = 'Invoice code: ' + field.node.value;
+                                    invoiceCodeEl.classList.remove('nx-loading');
+                                }
+                            })
+                            
+                        });
+                    });
+                })
+                .catch(err => console.error(err));
+        }
+    });
+</script>
+{{/partial}}
